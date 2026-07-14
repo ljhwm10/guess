@@ -86,7 +86,7 @@ function applyTheme(theme: Theme): void {
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.theme = theme;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', theme === 'dark' ? '#171528' : '#f5f6fc');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#12181c' : '#faf8f4');
 }
 
 /** 从当前 URL 解析分享进房参数(仅接受六位数字房号) */

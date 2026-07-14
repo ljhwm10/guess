@@ -7,9 +7,13 @@ const RoomView = lazy(() => import('./components/RoomView').then(m => ({ default
 const GameView = lazy(() => import('./components/GameView').then(m => ({ default: m.GameView })));
 const RelayView = lazy(() => import('./components/RelayView').then(m => ({ default: m.RelayView })));
 
-// 简单的加载占位
+// 品牌化加载占位(极少出现:分包已在空闲时预取)
 function LoadingFallback() {
-  return <div className="loading">加载中…</div>;
+  return (
+    <div className="loading">
+      <div className="loading-spinner" aria-hidden />
+    </div>
+  );
 }
 
 export function App(): JSX.Element {
@@ -18,6 +22,19 @@ export function App(): JSX.Element {
   const connected = useStore((s) => s.connected);
   const name = useStore((s) => s.name);
   const toast = useStore((s) => s.toast);
+
+  // 空闲时预取房间/游戏分包,进房时基本不会再出现"加载中"闪屏
+  useEffect(() => {
+    const prefetch = (): void => {
+      void import('./components/RoomView');
+      void import('./components/GameView');
+      void import('./components/RelayView');
+    };
+    const ric = (window as Window & { requestIdleCallback?: (cb: () => void) => number })
+      .requestIdleCallback;
+    if (ric) ric(prefetch);
+    else setTimeout(prefetch, 1200);
+  }, []);
 
   // 有昵称但尚未连接(如刷新页面)时不自动连,由首页按钮触发;
   // 但若已处于 room 视图(重连场景)保持即可,这里只兜底提示。
