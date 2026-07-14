@@ -71,7 +71,10 @@ Type=simple
 User=www-data
 WorkingDirectory=/opt/guess
 Environment=PORT=5310
-# pnpm 的绝对路径:用 `which pnpm` 查
+# ★关键:systemd 的 PATH 很干净,必须包含 node 所在目录,否则 pnpm 找不到 node。
+#   把最后一段换成 `which node` 去掉末尾 /node 后的目录(nvm 形如 /root/.nvm/versions/node/v20.x/bin)
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# ExecStart 用 `which pnpm` 查到的绝对路径
 ExecStart=/usr/local/bin/pnpm start
 Restart=always
 RestartSec=3
@@ -86,6 +89,8 @@ sudo systemctl enable --now guess
 sudo systemctl status guess          # 看运行状态
 journalctl -u guess -f               # 看实时日志
 ```
+
+> 若 `status` 报 `203/EXEC` 或日志出现 `pnpm: command not found`,就是上面的 `PATH` / `ExecStart` 绝对路径没配对,用 `which node`、`which pnpm` 修正。
 
 ### 方案 B:pm2
 
@@ -198,7 +203,23 @@ VITE_SERVER_URL=https://guess-api.example.com pnpm build
 
 ---
 
-## 六、更新 / 重新发布
+## 六、一键部署 / 更新脚本
+
+仓库根目录自带 `deploy.sh`:**拉最新代码 → 安装依赖 → 构建前端 → 自动识别 systemd/pm2 重启 → 健康检查**。
+
+```bash
+cd /opt/guess
+./deploy.sh                     # 日常更新一条命令搞定
+
+# 常用变量:
+SKIP_PULL=1 ./deploy.sh         # 本地已是最新,跳过 git pull
+SERVICE_NAME=guess ./deploy.sh  # 服务名不叫 guess 时指定
+PORT=8080 ./deploy.sh           # 健康检查端口(与服务实际端口一致)
+```
+
+> 首次部署顺序:先「二、构建启动」跑通 → 配好「三、守护进程(systemd/pm2)」→ 之后每次更新只需 `./deploy.sh`。脚本没检测到服务时会提示你先配守护进程,不会瞎跑。
+
+等价的手动步骤:
 
 ```bash
 cd /opt/guess
