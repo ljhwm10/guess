@@ -8,6 +8,11 @@ build/
 *.tsbuildinfo
 .vite/
 
+# ---- env ----
+.env
+.env.*
+!.env.example
+
 # ---- logs ----
 *.log
 npm-debug.log*

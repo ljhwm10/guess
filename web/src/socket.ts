@@ -7,10 +7,22 @@ import type {
 } from '@draw-guess/shared';
 import { useStore } from './store';
 
-export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
-  autoConnect: false,
-  transports: ['websocket', 'polling'],
-});
+/**
+ * 后端(socket.io/express)地址解析,优先级从高到低:
+ *   1) 运行时注入 window.__DG_SERVER_URL__ —— 改它无需重新构建(见 index.html 说明)
+ *   2) 构建期环境变量 VITE_SERVER_URL —— 打包时写死,如 VITE_SERVER_URL=https://api.example.com
+ *   3) 空字符串 = 同源 —— 前端由后端一并托管(单服务+反代)时用这个,最省事
+ */
+const SERVER_URL: string =
+  (typeof window !== 'undefined' ? window.__DG_SERVER_URL__ : undefined) ||
+  import.meta.env.VITE_SERVER_URL ||
+  '';
+
+const socketOptions = { autoConnect: false, transports: ['websocket', 'polling'] };
+
+export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = SERVER_URL
+  ? io(SERVER_URL, socketOptions)
+  : io(socketOptions);
 
 // ---------- 笔画缓存与画板事件总线(不进 React state,保证性能) ----------
 
