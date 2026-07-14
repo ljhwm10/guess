@@ -184,21 +184,23 @@ export function enterGame(name: string): void {
   }
 }
 
-export function createRoom(config: Partial<RoomConfig>): void {
+export function createRoom(config: Partial<RoomConfig>, onSettled?: () => void): void {
   socket.emit('room:create', { config }, (res) => {
     if (ackToast(res)) {
       store().clearChats();
       store().setView('room');
     }
+    onSettled?.();
   });
 }
 
-export function joinRoom(roomId: string): void {
+export function joinRoom(roomId: string, onSettled?: () => void): void {
   socket.emit('room:join', { roomId }, (res) => {
     if (ackToast(res)) {
       store().clearChats();
       store().setView('room');
     }
+    onSettled?.();
   });
 }
 
@@ -213,13 +215,17 @@ export function leaveRoom(): void {
   store().setRelayRecap(null);
 }
 
-export function relayDone(): void {
-  socket.emit('relay:done', ackToast);
+export function relayDone(onSettled?: () => void): void {
+  socket.emit('relay:done', (res) => {
+    ackToast(res);
+    onSettled?.();
+  });
 }
 
-export function relaySubmitGuess(word: string, onOk: () => void): void {
+export function relaySubmitGuess(word: string, onOk: () => void, onSettled?: () => void): void {
   socket.emit('relay:guess', { word }, (res) => {
     if (ackToast(res)) onOk();
+    onSettled?.();
   });
 }
 
@@ -234,8 +240,11 @@ export function setReady(ready: boolean): void {
   socket.emit('room:ready', { ready }, ackToast);
 }
 
-export function startGame(): void {
-  socket.emit('game:start', ackToast);
+export function startGame(onSettled?: () => void): void {
+  socket.emit('game:start', (res) => {
+    ackToast(res);
+    onSettled?.();
+  });
 }
 
 export function chooseWord(index: number, text: string): void {
@@ -248,8 +257,11 @@ export function refreshWords(onDone?: (ok: boolean) => void): void {
   });
 }
 
-export function playAgain(): void {
-  socket.emit('game:again', ackToast);
+export function playAgain(onSettled?: () => void): void {
+  socket.emit('game:again', (res) => {
+    ackToast(res);
+    onSettled?.();
+  });
 }
 
 export function sendChat(text: string, onOk: () => void): void {

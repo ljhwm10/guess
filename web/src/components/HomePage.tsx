@@ -18,6 +18,7 @@ import {
 import { useStore } from '../store';
 import { createRoom, enterGame, joinRoom, refreshRooms, socket } from '../socket';
 import { ThemeToggle } from './ThemeToggle';
+import { Spinner } from './Spinner';
 
 export function HomePage(): JSX.Element {
   const savedName = useStore((s) => s.name);
@@ -30,6 +31,9 @@ export function HomePage(): JSX.Element {
 
   const [nameInput, setNameInput] = useState(savedName);
   const [joinCode, setJoinCode] = useState(invitedRoom ?? '');
+  // 按钮 loading 态:创建中 / 正在加入哪个房间号
+  const [creating, setCreating] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
   const [mode, setMode] = useState<GameMode>(DEFAULT_CONFIG.mode);
   const [maxPlayers, setMaxPlayers] = useState(DEFAULT_CONFIG.maxPlayers);
   const [rounds, setRounds] = useState(DEFAULT_CONFIG.rounds);
@@ -81,20 +85,32 @@ export function HomePage(): JSX.Element {
   };
 
   const handleCreate = (): void => {
-    if (!ensureName()) return;
+    if (creating || !ensureName()) return;
+    setCreating(true);
     // 连接握手是异步的,稍等 hello 完成
-    waitConnected(() =>
-      createRoom({ mode, maxPlayers, rounds, drawSeconds, categoryHintSeconds, wordOptionCount }),
+    waitConnected(
+      () =>
+        createRoom(
+          { mode, maxPlayers, rounds, drawSeconds, categoryHintSeconds, wordOptionCount },
+          () => setCreating(false),
+        ),
+      () => setCreating(false),
     );
   };
 
   const handleJoin = (roomId: string): void => {
+    const id = roomId.trim();
+    if (joiningId) return;
     if (!ensureName()) return;
-    if (!roomId.trim()) {
+    if (!id) {
       showToast('请输入房间号');
       return;
     }
-    waitConnected(() => joinRoom(roomId.trim()));
+    setJoiningId(id);
+    waitConnected(
+      () => joinRoom(id, () => setJoiningId(null)),
+      () => setJoiningId(null),
+    );
   };
 
   return (
@@ -204,8 +220,19 @@ export function HomePage(): JSX.Element {
               </ConfigRow>
             </>
           )}
-          <button className="btn btn-primary btn-big" onClick={handleCreate}>
-            创建{mode === 'relay' ? '接龙' : ''}房间
+          <button
+            className="btn btn-primary btn-big"
+            onClick={handleCreate}
+            disabled={creating}
+          >
+            {creating ? (
+              <>
+                <Spinner />
+                创建中…
+              </>
+            ) : (
+              `创建${mode === 'relay' ? '接龙' : ''}房间`
+            )}
           </button>
         </section>
 
@@ -221,8 +248,12 @@ export function HomePage(): JSX.Element {
               onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, ''))}
               onKeyDown={(e) => e.key === 'Enter' && handleJoin(joinCode)}
             />
-            <button className="btn btn-primary" onClick={() => handleJoin(joinCode)}>
-              加入
+            <button
+              className="btn btn-primary"
+              onClick={() => handleJoin(joinCode)}
+              disabled={joiningId !== null}
+            >
+              {joiningId !== null && joiningId === joinCode.trim() ? <Spinner /> : '加入'}
             </button>
           </div>
 
@@ -245,10 +276,10 @@ export function HomePage(): JSX.Element {
                 </div>
                 <button
                   className="btn btn-sm btn-primary"
-                  disabled={r.phase !== 'lobby' || r.playerCount >= r.maxPlayers}
+                  disabled={r.phase !== 'lobby' || r.playerCount >= r.maxPlayers || joiningId !== null}
                   onClick={() => handleJoin(r.id)}
                 >
-                  {r.phase === 'lobby' ? '加入' : '进行中'}
+                  {joiningId === r.id ? <Spinner /> : r.phase === 'lobby' ? '加入' : '进行中'}
                 </button>
               </div>
             ))}
@@ -301,15 +332,16 @@ function Stepper(props: {
   );
 }
 
-/** 等待 socket 连上再执行(首次进入时 hello 需要一点时间) */
-function waitConnected(fn: () => void, tries = 40): void {
+/** 等待 socket 连上再执行(首次进入时 hello 需要一点时间);超时放弃时回调 onGiveUp */
+function waitConnected(fn: () => void, onGiveUp?: () => void, tries = 40): void {
   if (socket.connected) {
     fn();
     return;
   }
   if (tries <= 0) {
     useStore.getState().showToast('连接服务器失败,请稍后重试');
+    onGiveUp?.();
     return;
   }
-  setTimeout(() => waitConnected(fn, tries - 1), 100);
+  setTimeout(() => waitConnected(fn, onGiveUp, tries - 1), 100);
 }

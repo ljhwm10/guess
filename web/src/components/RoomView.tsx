@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { MIN_PLAYERS, RELAY_MIN_PLAYERS } from '@draw-guess/shared';
 import { useMe, useStore } from '../store';
 import { leaveRoom, setReady, startGame } from '../socket';
@@ -6,12 +7,14 @@ import { ChatPanel } from './ChatPanel';
 import { VoiceBar } from './VoiceBar';
 import { ShareButton } from './ShareButton';
 import { ThemeToggle } from './ThemeToggle';
+import { Spinner } from './Spinner';
 
 /** 房间等待界面(lobby) */
 export function RoomView(): JSX.Element | null {
   const roomState = useStore((s) => s.roomState);
   const { id: myId, isHost } = useMe();
   const showToast = useStore((s) => s.showToast);
+  const [starting, setStarting] = useState(false);
   if (!roomState) return null;
 
   const me = roomState.players.find((p) => p.id === myId);
@@ -87,12 +90,26 @@ export function RoomView(): JSX.Element | null {
 
           <div className="lobby-actions">
             {isHost ? (
-              <button className="btn btn-primary btn-big" disabled={!canStart} onClick={startGame}>
-                {canStart
-                  ? '开始游戏'
-                  : roomState.players.length < minPlayers
-                    ? `至少 ${minPlayers} 人才能开始`
-                    : '等待全员准备…'}
+              <button
+                className="btn btn-primary btn-big"
+                disabled={!canStart || starting}
+                onClick={() => {
+                  setStarting(true);
+                  startGame(() => setStarting(false));
+                }}
+              >
+                {starting ? (
+                  <>
+                    <Spinner />
+                    开始中…
+                  </>
+                ) : canStart ? (
+                  '开始游戏'
+                ) : roomState.players.length < minPlayers ? (
+                  `至少 ${minPlayers} 人才能开始`
+                ) : (
+                  '等待全员准备…'
+                )}
               </button>
             ) : me?.ready ? (
               <button className="btn btn-warn btn-big" onClick={() => setReady(false)}>

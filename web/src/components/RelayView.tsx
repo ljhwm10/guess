@@ -10,7 +10,32 @@ import { ShareButton } from './ShareButton';
 import { ThemeToggle } from './ThemeToggle';
 import { StrokesCanvas } from './StrokesCanvas';
 import { RelayRecapView } from './RelayRecap';
+import { Spinner } from './Spinner';
 import { avatarFor } from '../utils';
+
+/** 接龙"画好了"按钮:点后转圈直到 ack 返回(成功会切到下一环,失败恢复) */
+function RelayDoneButton(): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className="btn btn-primary btn-big"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        relayDone(() => setBusy(false));
+      }}
+    >
+      {busy ? (
+        <>
+          <Spinner />
+          提交中…
+        </>
+      ) : (
+        '✅ 画好了,传给下家'
+      )}
+    </button>
+  );
+}
 
 export function RelayView(): JSX.Element | null {
   const roomState = useStore((s) => s.roomState);
@@ -155,9 +180,7 @@ function RelayDrawActive(props: {
         onPenWidth={props.onPenWidth}
         onEraserWidth={props.onEraserWidth}
       />
-      <button className="btn btn-primary btn-big" onClick={relayDone}>
-        ✅ 画好了,传给下家
-      </button>
+      <RelayDoneButton />
     </>
   );
 }
@@ -233,9 +256,7 @@ function RelayRedrawActive(props: {
         onPenWidth={props.onPenWidth}
         onEraserWidth={props.onEraserWidth}
       />
-      <button className="btn btn-primary btn-big" onClick={relayDone}>
-        ✅ 画好了,传给下家
-      </button>
+      <RelayDoneButton />
     </>
   );
 }
@@ -243,10 +264,16 @@ function RelayRedrawActive(props: {
 /** 猜词环节:当前玩家看上一环的画,写下猜的词 */
 function RelayGuessActive({ strokes }: { strokes: Parameters<typeof StrokesCanvas>[0]['strokes'] }): JSX.Element {
   const [word, setWord] = useState('');
+  const [busy, setBusy] = useState(false);
   const submit = (): void => {
     const w = word.trim();
-    if (!w) return;
-    relaySubmitGuess(w, () => setWord(''));
+    if (!w || busy) return;
+    setBusy(true);
+    relaySubmitGuess(
+      w,
+      () => setWord(''),
+      () => setBusy(false),
+    );
   };
   return (
     <>
@@ -263,11 +290,12 @@ function RelayGuessActive({ strokes }: { strokes: Parameters<typeof StrokesCanva
           maxLength={20}
           placeholder="输入你猜的词…"
           autoFocus
+          disabled={busy}
           onChange={(e) => setWord(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <button className="btn btn-primary" onClick={submit}>
-          提交
+        <button className="btn btn-primary" onClick={submit} disabled={busy}>
+          {busy ? <Spinner /> : '提交'}
         </button>
       </div>
     </>

@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import { useStore } from '../store';
 import { leaveRoom, playAgain } from '../socket';
 import { avatarFor } from '../utils';
 import { StrokesCanvas } from './StrokesCanvas';
+import { Spinner } from './Spinner';
 
 /** 接龙结算:整链回放 + 首尾对比 */
 export function RelayRecapView({ isHost }: { isHost: boolean }): JSX.Element {
   const recap = useStore((s) => s.relayRecap);
+  const [again, setAgain] = useState(false);
 
   if (!recap) {
     return (
@@ -59,8 +62,22 @@ export function RelayRecapView({ isHost }: { isHost: boolean }): JSX.Element {
 
       <div className="rank-actions">
         {isHost ? (
-          <button className="btn btn-primary btn-big" onClick={playAgain}>
-            再来一局
+          <button
+            className="btn btn-primary btn-big"
+            disabled={again}
+            onClick={() => {
+              setAgain(true);
+              playAgain(() => setAgain(false));
+            }}
+          >
+            {again ? (
+              <>
+                <Spinner />
+                开始中…
+              </>
+            ) : (
+              '再来一局'
+            )}
           </button>
         ) : (
           <p className="overlay-tip">等待房主开启下一局…</p>
