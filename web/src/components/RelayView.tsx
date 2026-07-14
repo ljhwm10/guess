@@ -26,6 +26,9 @@ export function RelayView(): JSX.Element | null {
   const phase = roomState.phase;
   const relay = roomState.relay;
   const isActive = relay?.activeId === myId;
+  const activeOffline = relay
+    ? roomState.players.find((p) => p.id === relay.activeId)?.online === false
+    : false;
 
   return (
     <div className="game">
@@ -52,7 +55,11 @@ export function RelayView(): JSX.Element | null {
               {relay ? (
                 <>
                   {avatarFor(relay.activeId)} <strong>{relay.activeName}</strong>
-                  {relay.kind === 'draw' ? ' 正在作画…' : ' 正在猜词…'}
+                  {activeOffline
+                    ? ' 掉线了,等待重连…'
+                    : relay.kind === 'draw'
+                      ? ' 正在作画…'
+                      : ' 正在猜词…'}
                 </>
               ) : (
                 '接龙进行中'
@@ -269,7 +276,22 @@ function RelayGuessActive({ strokes }: { strokes: Parameters<typeof StrokesCanva
 
 /** 等待其他玩家操作 */
 function RelayWaiting(): JSX.Element {
-  const relay = useStore((s) => s.roomState?.relay);
+  const roomState = useStore((s) => s.roomState);
+  const relay = roomState?.relay;
+  const activeOffline = relay
+    ? roomState?.players.find((p) => p.id === relay.activeId)?.online === false
+    : false;
+
+  if (relay && activeOffline) {
+    return (
+      <div className="relay-waiting">
+        <div className="relay-waiting-emoji">⏸️</div>
+        <h3>{relay.activeName} 掉线了,等待重连…</h3>
+        <p className="overlay-tip">计时已暂停,重连后会从刚才的进度继续</p>
+      </div>
+    );
+  }
+
   return (
     <div className="relay-waiting">
       <div className="relay-waiting-emoji">{relay?.kind === 'draw' ? '🎨' : '🤔'}</div>

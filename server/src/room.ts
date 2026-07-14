@@ -117,6 +117,8 @@ export class Room {
   private relayStep = 0;
   private relayActiveId: string | null = null;
   private relayRecap: RelayRecap | null = null;
+  /** 活动玩家掉线时冻结的剩余时间(ms);重连后据此恢复计时 */
+  private relayRemainingMs: number | null = null;
   private msgSeq = 0;
   private destroyed = false;
 
@@ -233,6 +235,14 @@ export class Room {
     this.broadcastState();
     if (this.config.mode === 'relay') {
       this.resendRelayTo(id);
+      // 活动玩家回来且该步处于暂停(无计时器)→ 恢复其回合与剩余时间
+      if (
+        id === this.relayActiveId &&
+        this.phaseTimer == null &&
+        (this.phase === 'relayDraw' || this.phase === 'relayGuess')
+      ) {
+        this.resumeRelayStep();
+      }
       this.broadcastVoicePeers();
       return;
     }
@@ -272,9 +282,14 @@ export class Room {
     this.broadcastState();
     this.broadcastVoicePeers();
     if (this.config.mode === 'relay') {
-      // 接龙:当前活动玩家掉线立即以现有内容结算该环并推进,不拖累全场
-      if (this.phase === 'relayDraw' && id === this.relayActiveId) this.finishRelayDraw(true);
-      else if (this.phase === 'relayGuess' && id === this.relayActiveId) this.finishRelayGuess('', true);
+      // 接龙:当前活动玩家掉线不立即跳过,而是暂停计时等待重连(宽限期内);
+      // 超过宽限期由 removeTimer→removePlayer 再推进。
+      if (
+        (this.phase === 'relayDraw' || this.phase === 'relayGuess') &&
+        id === this.relayActiveId
+      ) {
+        this.pauseRelayStep();
+      }
       return;
     }
     // 画者掉线立即结束回合;猜词者掉线可能触发"全员已猜中"
@@ -598,6 +613,7 @@ export class Room {
       return;
     }
     this.relayActiveId = activeId;
+    this.relayRemainingMs = null;
     this.strokes = [];
     this.strokeById.clear();
     if (kind === 'draw') {
@@ -672,6 +688,34 @@ export class Room {
     });
     this.relayStep += 1;
     this.beginRelayStep();
+  }
+
+  /** 活动玩家掉线:冻结计时,记录剩余时间,广播暂停状态(等待重连) */
+  private pauseRelayStep(): void {
+    if (this.phase !== 'relayDraw' && this.phase !== 'relayGuess') return;
+    if (this.phaseTimer != null) {
+      this.clock.clearTimeout(this.phaseTimer);
+      this.phaseTimer = null;
+    }
+    this.relayRemainingMs =
+      this.timerEndsAt != null ? Math.max(0, this.timerEndsAt - this.clock.now()) : null;
+    this.timerEndsAt = null; // 前端计时归零显示为暂停
+    this.broadcastState();
+  }
+
+  /** 活动玩家重连:按冻结的剩余时间(不足则给完整时长)恢复计时 */
+  private resumeRelayStep(): void {
+    if (this.phase !== 'relayDraw' && this.phase !== 'relayGuess') return;
+    const full = this.phase === 'relayDraw' ? this.config.drawSeconds * 1000 : RELAY_GUESS_SECONDS * 1000;
+    const ms = this.relayRemainingMs != null && this.relayRemainingMs > 1000 ? this.relayRemainingMs : full;
+    this.relayRemainingMs = null;
+    if (this.phaseTimer != null) this.clock.clearTimeout(this.phaseTimer);
+    this.timerEndsAt = this.clock.now() + ms;
+    this.phaseTimer = this.clock.setTimeout(
+      () => (this.phase === 'relayDraw' ? this.finishRelayDraw(true) : this.finishRelayGuess('', true)),
+      ms,
+    );
+    this.broadcastState();
   }
 
   relayDone(id: string): void {
@@ -756,6 +800,7 @@ export class Room {
     this.relayStep = 0;
     this.relayActiveId = null;
     this.relayRecap = null;
+    this.relayRemainingMs = null;
     for (const p of this.players.values()) {
       p.ready = false;
       p.guessedAt = null;

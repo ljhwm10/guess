@@ -32,8 +32,11 @@ export function createGameServer(): GameServer {
   const httpServer = createServer(app);
   const io: IoServer = new Server(httpServer, {
     cors: { origin: true },
-    // 手机锁屏等场景下留足恢复余地
-    pingTimeout: 20000,
+    // 手机锁屏/切后台/弱网短暂无响应不立即判死:放宽 ping 超时,减少误断线
+    pingInterval: 20000,
+    pingTimeout: 40000,
+    // 允许更长的升级/连接握手时间
+    connectTimeout: 30000,
   });
 
   /** playerId -> 当前 socket */

@@ -746,10 +746,34 @@ describe('接龙模式', () => {
     expect(io.of('C', 'relay:task')).toHaveLength(0);
   });
 
-  it('当前作画者掉线立即成环推进', () => {
+  it('作画者掉线暂停等待重连,重连后继续其回合(不跳过)', () => {
     const room = relayRoom(3);
-    room.onDisconnect('A'); // A 正在作画
-    expect(room.phase).toBe('relayDraw'); // 进入 B 重画(B 非末位)
+    addOneStroke(room, 'A', 's1');
+    room.onDisconnect('A'); // A 正在作画,掉线
+    let st = io.lastState('B')!;
+    expect(st.phase).toBe('relayDraw');
+    expect(st.relay!.activeId).toBe('A'); // 仍是 A 的回合
+    expect(st.timerEndsAt).toBeNull(); // 计时暂停
+    expect(st.players.find((p) => p.id === 'A')!.online).toBe(false);
+    io.clear();
+    room.rejoin('A');
+    st = io.lastState('A')!;
+    expect(st.phase).toBe('relayDraw');
+    expect(st.relay!.activeId).toBe('A');
+    expect(st.timerEndsAt).not.toBeNull(); // 计时恢复
+    expect(st.players.find((p) => p.id === 'A')!.online).toBe(true);
+    // 重连后自己的画被回放、任务重发,可继续作画
+    const sync = io.last('A', 'draw:sync')!.args[0] as { strokes: unknown[] };
+    expect(sync.strokes).toHaveLength(1);
+    expect((io.last('A', 'relay:task')!.args[0] as { kind: string }).kind).toBe('draw');
+  });
+
+  it('作画者超过宽限期未重连才跳过其回合', () => {
+    const room = relayRoom(3);
+    room.onDisconnect('A');
+    clock.advance(60_000); // 宽限到期
+    expect(room.hasPlayer('A')).toBe(false);
+    expect(room.phase).toBe('relayDraw'); // 推进到 B 重画
     expect(io.lastState('B')!.relay!.activeId).toBe('B');
   });
 });

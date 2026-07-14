@@ -18,7 +18,18 @@ const SERVER_URL: string =
   import.meta.env.VITE_SERVER_URL ||
   '';
 
-const socketOptions = { autoConnect: false, transports: ['websocket', 'polling'] };
+const socketOptions = {
+  autoConnect: false,
+  // 优先 websocket(更快、无轮询握手),失败再回退 polling
+  transports: ['websocket', 'polling'],
+  // 断线后积极重连:首次 0.5s,指数退避封顶 3s,无限重试
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 3000,
+  randomizationFactor: 0.5,
+  timeout: 10000,
+};
 
 export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = SERVER_URL
   ? io(SERVER_URL, socketOptions)
