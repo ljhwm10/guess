@@ -32,7 +32,7 @@ echo "==> [3/5] 构建前端"
 pnpm build
 
 echo "==> [4/5] 重启服务"
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}\.service"; then
+if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
   sudo systemctl restart "$SERVICE_NAME"
   echo "    systemd 已重启 ${SERVICE_NAME}"
 elif command -v pm2 >/dev/null 2>&1 && pm2 describe "$SERVICE_NAME" >/dev/null 2>&1; then
