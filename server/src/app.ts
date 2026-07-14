@@ -117,14 +117,24 @@ export function createGameServer(): GameServer {
 
     socket.on('room:create', (p, ack) => {
       guard(ack, () => {
-        const roomId = manager.createRoom(playerId(), data.name ?? '玩家', p?.config ?? {});
+        const roomId = manager.createRoom(
+          playerId(),
+          data.name ?? '玩家',
+          p?.config ?? {},
+          String(p?.password ?? ''),
+        );
         return { ok: true, roomId };
       });
     });
 
     socket.on('room:join', (p, ack) => {
       guard(ack, () => {
-        manager.joinRoom(playerId(), data.name ?? '玩家', String(p?.roomId ?? ''));
+        manager.joinRoom(
+          playerId(),
+          data.name ?? '玩家',
+          String(p?.roomId ?? ''),
+          String(p?.password ?? ''),
+        );
       });
     });
 
@@ -142,6 +152,16 @@ export function createGameServer(): GameServer {
       guard(ack, () => {
         const id = playerId();
         manager.getRoomOf(id)?.setReady(id, !!p?.ready);
+      });
+    });
+
+    socket.on('room:seat', (p, ack) => {
+      guard(ack, () => {
+        const id = playerId();
+        const room = manager.getRoomOf(id);
+        if (!room) throw new GameError('不在房间中');
+        const seat = p?.seat === null || p?.seat === undefined ? null : Number(p.seat);
+        room.moveSeat(id, seat);
       });
     });
 

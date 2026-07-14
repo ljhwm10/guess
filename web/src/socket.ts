@@ -184,23 +184,38 @@ export function enterGame(name: string): void {
   }
 }
 
-export function createRoom(config: Partial<RoomConfig>, onSettled?: () => void): void {
-  socket.emit('room:create', { config }, (res) => {
+export function createRoom(
+  config: Partial<RoomConfig>,
+  password?: string,
+  onSettled?: () => void,
+): void {
+  socket.emit('room:create', { config, password }, (res) => {
     if (ackToast(res)) {
       store().clearChats();
+      store().setRoomPassword(config.private ? password ?? '' : null);
       store().setView('room');
     }
     onSettled?.();
   });
 }
 
-export function joinRoom(roomId: string, onSettled?: () => void): void {
-  socket.emit('room:join', { roomId }, (res) => {
-    if (ackToast(res)) {
+export type JoinResult = { ok: true } | { ok: false; error: string };
+
+/** 加入房间;密码错误不弹 toast(交由调用方提示重新输入),其余错误照常提示 */
+export function joinRoom(
+  roomId: string,
+  password?: string,
+  onResult?: (res: JoinResult) => void,
+): void {
+  socket.emit('room:join', { roomId, password }, (res) => {
+    if (res.ok) {
       store().clearChats();
+      store().setRoomPassword(password ? password : null);
       store().setView('room');
+    } else if (!/密码/.test(res.error)) {
+      store().showToast(res.error || '操作失败');
     }
-    onSettled?.();
+    onResult?.(res);
   });
 }
 
@@ -213,6 +228,8 @@ export function leaveRoom(): void {
   store().setGallery(null);
   store().setRelayTask(null);
   store().setRelayRecap(null);
+  store().setRoomPassword(null);
+  store().setPendingRoomPassword(null);
 }
 
 export function relayDone(onSettled?: () => void): void {
@@ -238,6 +255,11 @@ export function refreshRooms(): void {
 
 export function setReady(ready: boolean): void {
   socket.emit('room:ready', { ready }, ackToast);
+}
+
+/** 入座/换座(seat 为座位号)或去备战席(seat = null) */
+export function moveSeat(seat: number | null): void {
+  socket.emit('room:seat', { seat }, ackToast);
 }
 
 export function startGame(onSettled?: () => void): void {

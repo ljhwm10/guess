@@ -16,6 +16,8 @@ export type GameMode = 'classic' | 'relay';
 export interface RoomConfig {
   /** 游戏模式 */
   mode: GameMode;
+  /** 是否私密房间(不进公开列表,加入需密码) */
+  private: boolean;
   maxPlayers: number;
   rounds: number;
   /** 作画/猜词时长(秒) */
@@ -73,6 +75,8 @@ export interface PlayerView {
   score: number;
   /** 当前回合是否已猜中 */
   guessed: boolean;
+  /** 座位号(0 起);null = 备战席(不参战,观战) */
+  seat: number | null;
 }
 
 export interface TurnResult {
@@ -161,11 +165,16 @@ export type Ack<T = Record<never, never>> = (res: AckRes<T>) => void;
 
 export interface ClientToServerEvents {
   hello: (p: { playerId: string; name: string }, ack: Ack<{ inRoom: boolean }>) => void;
-  'room:create': (p: { config: Partial<RoomConfig> }, ack: Ack<{ roomId: string }>) => void;
-  'room:join': (p: { roomId: string }, ack: Ack) => void;
+  'room:create': (
+    p: { config: Partial<RoomConfig>; password?: string },
+    ack: Ack<{ roomId: string }>,
+  ) => void;
+  'room:join': (p: { roomId: string; password?: string }, ack: Ack) => void;
   'room:leave': (ack: Ack) => void;
   'room:list': (ack: Ack<{ rooms: RoomSummary[] }>) => void;
   'room:ready': (p: { ready: boolean }, ack: Ack) => void;
+  /** 换座:seat 为座位号(入座/换位),null 表示去备战席;仅 lobby 有效 */
+  'room:seat': (p: { seat: number | null }, ack: Ack) => void;
   'game:start': (ack: Ack) => void;
   /** text 用于校验所选词与服务端当前列表一致(防"换一批"竞态误选) */
   'game:chooseWord': (p: { index: number; text?: string }, ack: Ack) => void;

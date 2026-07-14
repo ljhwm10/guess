@@ -51,6 +51,7 @@ export const WORD_OPTION_COUNT_CHOICES = [3, 4, 5];
 
 export const DEFAULT_CONFIG = {
   mode: 'classic' as 'classic' | 'relay',
+  private: false,
   maxPlayers: 8,
   rounds: 2,
   drawSeconds: 90,
@@ -60,3 +61,5 @@ export const DEFAULT_CONFIG = {
 
 export const NAME_MAX_LEN = 12;
 export const CHAT_MAX_LEN = 60;
+/** 房间总容量(在座 + 备战席);座位数为 config.maxPlayers,其余进备战席 */
+export const ROOM_CAPACITY = 16;

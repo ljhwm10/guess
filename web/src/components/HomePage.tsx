@@ -26,8 +26,10 @@ export function HomePage(): JSX.Element {
   const rooms = useStore((s) => s.rooms);
   const showToast = useStore((s) => s.showToast);
   const setPendingRoomId = useStore((s) => s.setPendingRoomId);
-  // 分享进房号只在进入首页时消费一次:立即从 store 取出并清空,避免离开房间后被重复自动拉回
+  const setPendingRoomPassword = useStore((s) => s.setPendingRoomPassword);
+  // 分享进房号/密码只在进入首页时消费一次:立即取出并清空,避免离开房间后被重复自动拉回
   const [invitedRoom] = useState(() => useStore.getState().pendingRoomId);
+  const [invitedPassword] = useState(() => useStore.getState().pendingRoomPassword);
 
   const [nameInput, setNameInput] = useState(savedName);
   const [joinCode, setJoinCode] = useState(invitedRoom ?? '');
@@ -35,6 +37,8 @@ export function HomePage(): JSX.Element {
   const [creating, setCreating] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [mode, setMode] = useState<GameMode>(DEFAULT_CONFIG.mode);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [password, setPassword] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(DEFAULT_CONFIG.maxPlayers);
   const [rounds, setRounds] = useState(DEFAULT_CONFIG.rounds);
   const [drawSeconds, setDrawSeconds] = useState(DEFAULT_CONFIG.drawSeconds);
@@ -61,17 +65,19 @@ export function HomePage(): JSX.Element {
     return () => clearInterval(t);
   }, [connected]);
 
-  // 消费掉分享进房号(仅本次首页有效)
+  // 消费掉分享进房号/密码(仅本次首页有效)
   useEffect(() => {
     if (invitedRoom) setPendingRoomId(null);
-  }, [invitedRoom, setPendingRoomId]);
+    if (invitedPassword) setPendingRoomPassword(null);
+  }, [invitedRoom, invitedPassword, setPendingRoomId, setPendingRoomPassword]);
 
   // 通过分享链接进入且已有昵称时,连接后自动加入对应房间(仅尝试一次)
   const autoJoinedRef = useRef(false);
   useEffect(() => {
     if (autoJoinedRef.current || !invitedRoom || !savedName || !connected) return;
     autoJoinedRef.current = true;
-    joinRoom(invitedRoom);
+    handleJoin(invitedRoom, invitedPassword ?? undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, savedName, invitedRoom]);
 
   const ensureName = (): boolean => {
@@ -86,19 +92,24 @@ export function HomePage(): JSX.Element {
 
   const handleCreate = (): void => {
     if (creating || !ensureName()) return;
+    if (isPrivate && !password.trim()) {
+      showToast('请设置房间密码');
+      return;
+    }
     setCreating(true);
     // 连接握手是异步的,稍等 hello 完成
     waitConnected(
       () =>
         createRoom(
-          { mode, maxPlayers, rounds, drawSeconds, categoryHintSeconds, wordOptionCount },
+          { mode, private: isPrivate, maxPlayers, rounds, drawSeconds, categoryHintSeconds, wordOptionCount },
+          isPrivate ? password.trim() : undefined,
           () => setCreating(false),
         ),
       () => setCreating(false),
     );
   };
 
-  const handleJoin = (roomId: string): void => {
+  const handleJoin = (roomId: string, pw?: string): void => {
     const id = roomId.trim();
     if (joiningId) return;
     if (!ensureName()) return;
@@ -108,7 +119,15 @@ export function HomePage(): JSX.Element {
     }
     setJoiningId(id);
     waitConnected(
-      () => joinRoom(id, () => setJoiningId(null)),
+      () =>
+        joinRoom(id, pw, (res) => {
+          setJoiningId(null);
+          // 私密房间密码错误/缺失 → 提示重新输入后重试
+          if (!res.ok && /密码/.test(res.error)) {
+            const input = window.prompt('该房间是私密房间,请输入密码');
+            if (input != null && input.trim() !== '') handleJoin(id, input.trim());
+          }
+        }),
       () => setJoiningId(null),
     );
   };
@@ -160,6 +179,29 @@ export function HomePage(): JSX.Element {
             <p className="mode-hint">
               接龙:{RELAY_MIN_PLAYERS}~16 人。首位照原始词作画,之后每人看上一幅画凭记忆重画,最后一人看画猜词;结束复盘整条画链 😆
             </p>
+          )}
+          <ConfigRow label="私密">
+            <button
+              className={`seg ${!isPrivate ? 'seg-on' : ''}`}
+              onClick={() => setIsPrivate(false)}
+            >
+              公开
+            </button>
+            <button
+              className={`seg ${isPrivate ? 'seg-on' : ''}`}
+              onClick={() => setIsPrivate(true)}
+            >
+              🔒 私密
+            </button>
+          </ConfigRow>
+          {isPrivate && (
+            <input
+              className="input"
+              value={password}
+              maxLength={32}
+              placeholder="设置房间密码(分享链接可自动带上)"
+              onChange={(e) => setPassword(e.target.value)}
+            />
           )}
           <ConfigRow label="人数上限">
             {maxPlayersChoices.map((n) => (

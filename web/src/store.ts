@@ -45,6 +45,10 @@ interface GameStore {
   theme: Theme;
   /** 分享链接带来的待进入房间号(六位数字),消费后清空 */
   pendingRoomId: string | null;
+  /** 分享链接带来的房间密码(私密房间直达用),消费后清空 */
+  pendingRoomPassword: string | null;
+  /** 当前所在房间使用的密码(用于分享私密房间链接),离开清空 */
+  roomPassword: string | null;
 
   setName(name: string): void;
   setConnected(connected: boolean): void;
@@ -65,6 +69,8 @@ interface GameStore {
   setTheme(theme: Theme): void;
   toggleTheme(): void;
   setPendingRoomId(id: string | null): void;
+  setPendingRoomPassword(pw: string | null): void;
+  setRoomPassword(pw: string | null): void;
 }
 
 function loadPlayerId(): string {
@@ -100,6 +106,16 @@ function loadPendingRoomId(): string | null {
   return null;
 }
 
+function loadPendingRoomPassword(): string | null {
+  try {
+    const pw = new URLSearchParams(window.location.search).get('pw');
+    if (pw) return pw.slice(0, 32);
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 const initialTheme = loadTheme();
 applyTheme(initialTheme);
 
@@ -125,6 +141,8 @@ export const useStore = create<GameStore>((set, get) => ({
   relayRecap: null,
   theme: initialTheme,
   pendingRoomId: loadPendingRoomId(),
+  pendingRoomPassword: loadPendingRoomPassword(),
+  roomPassword: null,
 
   setName: (name) => {
     localStorage.setItem('dg:name', name);
@@ -158,6 +176,8 @@ export const useStore = create<GameStore>((set, get) => ({
     get().setTheme(get().theme === 'dark' ? 'light' : 'dark');
   },
   setPendingRoomId: (pendingRoomId) => set({ pendingRoomId }),
+  setPendingRoomPassword: (pendingRoomPassword) => set({ pendingRoomPassword }),
+  setRoomPassword: (roomPassword) => set({ roomPassword }),
 }));
 
 /** 便捷选择器 */

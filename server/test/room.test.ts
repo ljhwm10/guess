@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ChatMsg, RoomConfig, RoomState, TurnRecord, WordOption } from '@draw-guess/shared';
 import { GameError, Room } from '../src/room';
-import { sanitizeConfig } from '../src/roomManager';
+import { RoomManager, sanitizeConfig } from '../src/roomManager';
 import { FakeClock, FakeIO } from './helpers';
 
 const CONFIG: RoomConfig = {
   mode: 'classic',
+  private: false,
   maxPlayers: 8,
   rounds: 1,
   drawSeconds: 80,
@@ -68,12 +69,17 @@ beforeEach(() => {
 });
 
 describe('房间与准备', () => {
-  it('第一个进房者是房主,人满拒绝加入', () => {
+  it('第一个进房者是房主;座位坐满后进备战席', () => {
     const room = makeRoom({ ...CONFIG, maxPlayers: 2 });
     room.addPlayer('A', '安娜');
     room.addPlayer('B', '波仔');
     expect(io.lastState('A')!.hostId).toBe('A');
-    expect(() => room.addPlayer('C', '陈晨')).toThrow('房间已满');
+    // 座位(2)已满,C 进备战席(seat=null),不再拒绝
+    room.addPlayer('C', '陈晨');
+    const st = io.lastState('A')!;
+    expect(st.players.find((p) => p.id === 'A')!.seat).toBe(0);
+    expect(st.players.find((p) => p.id === 'B')!.seat).toBe(1);
+    expect(st.players.find((p) => p.id === 'C')!.seat).toBeNull();
   });
 
   it('房主无需准备;非房主可准备/取消', () => {
@@ -99,9 +105,12 @@ describe('房间与准备', () => {
     expect(room.phase).toBe('choosing');
   });
 
-  it('游戏进行中不可加入', () => {
+  it('游戏进行中加入者进备战席观战', () => {
     const room = drawingRoom();
-    expect(() => room.addPlayer('D', '丁丁')).toThrow('游戏进行中');
+    room.addPlayer('D', '丁丁');
+    expect(room.hasPlayer('D')).toBe(true);
+    expect(io.lastState('A')!.players.find((p) => p.id === 'D')!.seat).toBeNull();
+    expect(room.phase).toBe('drawing'); // 不影响进行中的对局
   });
 
   it('房主离开后房主移交给最早进房的玩家', () => {
@@ -274,6 +283,7 @@ describe('配置校验', () => {
   it('缺省与非法值取默认', () => {
     expect(sanitizeConfig({})).toEqual({
       mode: 'classic',
+      private: false,
       maxPlayers: 8,
       rounds: 2,
       drawSeconds: 90,
@@ -775,5 +785,112 @@ describe('接龙模式', () => {
     expect(room.hasPlayer('A')).toBe(false);
     expect(room.phase).toBe('relayDraw'); // 推进到 B 重画
     expect(io.lastState('B')!.relay!.activeId).toBe('B');
+  });
+});
+
+describe('座位与备战席', () => {
+  const seatOf = (id: string): number | null =>
+    io.lastState('A')!.players.find((p) => p.id === id)!.seat;
+
+  it('入座按进房顺序取最小空位', () => {
+    const room = makeRoom();
+    room.addPlayer('A', '安');
+    room.addPlayer('B', '波');
+    room.addPlayer('C', '陈');
+    expect([seatOf('A'), seatOf('B'), seatOf('C')]).toEqual([0, 1, 2]);
+  });
+
+  it('可换到空座;占用/越界/游戏中换座被拒', () => {
+    const room = makeRoom();
+    room.addPlayer('A', '安');
+    room.addPlayer('B', '波');
+    room.moveSeat('A', 5);
+    expect(seatOf('A')).toBe(5);
+    expect(() => room.moveSeat('B', 5)).toThrow('该座位已被占');
+    expect(() => room.moveSeat('B', 99)).toThrow('无效座位');
+    room.moveSeat('A', 0);
+    room.setReady('B', true);
+    room.startGame('A');
+    expect(() => room.moveSeat('B', 3)).toThrow('游戏开始后不能换座');
+  });
+
+  it('出场顺序按座位号', () => {
+    const room = makeRoom();
+    room.addPlayer('A', '安');
+    room.addPlayer('B', '波');
+    room.addPlayer('C', '陈');
+    room.moveSeat('A', 5); // 座位 B=1,C=2,A=5 → 顺序 B,C,A
+    room.setReady('B', true);
+    room.setReady('C', true);
+    room.startGame('A');
+    expect(io.lastState('A')!.drawerId).toBe('B');
+  });
+
+  it('备战席玩家不参战;仅在座人数决定开局与排名', () => {
+    const room = makeRoom({ ...CONFIG, maxPlayers: 2 });
+    room.addPlayer('A', '安');
+    room.addPlayer('B', '波');
+    room.addPlayer('C', '陈'); // C 座位满,进备战席
+    expect(seatOf('C')).toBeNull();
+    room.setReady('B', true);
+    room.startGame('A'); // 在座 2 人可开始
+    room.chooseWord('A', 0);
+    clock.advance(80_000); // A 回合超时
+    clock.advance(5_000); // → B
+    expect(io.lastState('A')!.drawerId).toBe('B');
+    clock.advance(15_000 + 80_000 + 5_000); // B 回合走完 → 结束(不轮到 C)
+    expect(room.phase).toBe('gameEnd');
+    expect(io.lastState('A')!.ranking!.map((r) => r.playerId).sort()).toEqual(['A', 'B']);
+  });
+
+  it('备战席观战者不能剧透答案,也不计入全员猜中', () => {
+    const room = makeRoom({ ...CONFIG, maxPlayers: 2 });
+    room.addPlayer('A', '安');
+    room.addPlayer('B', '波');
+    room.addPlayer('C', '陈'); // 备战席
+    room.setReady('B', true);
+    room.startGame('A');
+    room.chooseWord('A', 0);
+    const word = wordOf(room);
+    expect(() => room.chat('C', word)).toThrow('观战中不能剧透答案');
+    room.chat('B', word); // 唯一在座猜词者猜中 → 提前结束(C 不算)
+    expect(room.phase).toBe('turnEnd');
+  });
+});
+
+describe('私密房间', () => {
+  const mgr = (): RoomManager => new RoomManager(io, clock, () => 0);
+
+  it('私密房间需正确密码才能加入,且不进公开列表', () => {
+    const m = mgr();
+    const roomId = m.createRoom('A', '安', { private: true, maxPlayers: 4 }, 'secret');
+    expect(m.listRooms().find((r) => r.id === roomId)).toBeUndefined();
+    expect(() => m.joinRoom('B', '波', roomId, '')).toThrow('房间密码错误');
+    expect(() => m.joinRoom('B', '波', roomId, 'wrong')).toThrow('房间密码错误');
+    m.joinRoom('B', '波', roomId, 'secret');
+    expect(m.getRoom(roomId)!.hasPlayer('B')).toBe(true);
+  });
+
+  it('公开房间无需密码且出现在列表', () => {
+    const m = mgr();
+    const roomId = m.createRoom('A', '安', { private: false, maxPlayers: 4 });
+    expect(m.listRooms().find((r) => r.id === roomId)).toBeTruthy();
+    m.joinRoom('B', '波', roomId);
+    expect(m.getRoom(roomId)!.hasPlayer('B')).toBe(true);
+  });
+});
+
+describe('经典模式猜对打码', () => {
+  it('猜中者私得原词,其余人只见打码看不到答案', () => {
+    const room = drawingRoom(); // A 画,B/C 猜
+    const word = wordOf(room);
+    io.clear();
+    room.chat('B', word);
+    expect((io.last('B', 'game:word')!.args[0] as { word: string }).word).toBe(word);
+    const cChats = io.of('C', 'chat:msg').map((e) => e.args[0] as { text: string });
+    expect(cChats.some((m) => m.text.includes(word))).toBe(false); // C 看不到答案
+    const masked = cChats.find((m) => /^＊+$/.test(m.text));
+    expect(masked).toBeTruthy();
+    expect([...masked!.text].length).toBe([...word].length);
   });
 });

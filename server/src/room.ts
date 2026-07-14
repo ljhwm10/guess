@@ -7,6 +7,7 @@ import {
   RELAY_GUESS_SECONDS,
   RELAY_MIN_PLAYERS,
   REVEAL_CHAR_RATIO,
+  ROOM_CAPACITY,
   TURN_END_SECONDS,
   WORD_REFRESH_PER_TURN,
   CHAT_MAX_LEN,
@@ -55,6 +56,8 @@ interface PlayerInternal {
   name: string;
   ready: boolean;
   online: boolean;
+  /** 座位号(0 起);null = 备战席(观战,不参战) */
+  seat: number | null;
   score: number;
   /** 当前回合猜中时刻,未猜中为 null */
   guessedAt: number | null;
@@ -121,6 +124,8 @@ export class Room {
   private relayRemainingMs: number | null = null;
   private msgSeq = 0;
   private destroyed = false;
+  /** 私密房间密码(非私密为空);从不下发到客户端状态 */
+  private readonly password: string;
 
   constructor(
     id: string,
@@ -129,9 +134,11 @@ export class Room {
     private hooks: RoomHooks,
     private clock: Clock = systemClock,
     private rng: () => number = Math.random,
+    password = '',
   ) {
     this.id = id;
     this.config = config;
+    this.password = password;
   }
 
   // ---------- 查询 ----------
@@ -148,6 +155,14 @@ export class Room {
     return this.players.has(id);
   }
 
+  get isPrivate(): boolean {
+    return this.config.private === true;
+  }
+
+  passwordMatches(pw: string): boolean {
+    return this.password === String(pw ?? '');
+  }
+
   getDrawerId(): string | null {
     return this.drawerId;
   }
@@ -158,15 +173,18 @@ export class Room {
       phase: this.phase,
       config: this.config,
       hostId: this.hostId,
-      players: [...this.players.values()].map((p) => ({
-        id: p.id,
-        name: p.name,
-        isHost: p.id === this.hostId,
-        ready: p.ready,
-        online: p.online,
-        score: p.score,
-        guessed: p.guessedAt != null,
-      })),
+      players: [...this.players.values()]
+        .sort((a, b) => (a.seat ?? 999) - (b.seat ?? 999))
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          isHost: p.id === this.hostId,
+          ready: p.ready,
+          online: p.online,
+          score: p.score,
+          guessed: p.guessedAt != null,
+          seat: p.seat,
+        })),
       round: this.round,
       totalRounds: this.config.rounds,
       turnInRound: this.turnInRound,
@@ -200,13 +218,15 @@ export class Room {
 
   addPlayer(id: string, name: string): void {
     if (this.players.has(id)) return this.rejoin(id);
-    if (this.phase !== 'lobby') fail('游戏进行中,无法加入');
-    if (this.players.size >= this.config.maxPlayers) fail('房间已满');
+    if (this.players.size >= ROOM_CAPACITY) fail('房间已满');
+    // lobby 中优先入座,座位满则进备战席;游戏进行中进来一律先坐备战席观战
+    const seat = this.phase === 'lobby' ? this.firstFreeSeat() : null;
     this.players.set(id, {
       id,
       name,
       ready: false,
       online: true,
+      seat,
       score: 0,
       guessedAt: null,
       turnGain: 0,
@@ -215,9 +235,39 @@ export class Room {
       voiceMuted: false,
     });
     if (this.players.size === 1) this.hostId = id;
-    this.sendSystem(`${name} 加入了房间`);
+    const where = seat === null ? '(备战席)' : '';
+    this.sendSystem(`${name} 加入了房间${where}`);
     this.broadcastState();
     this.broadcastVoicePeers();
+  }
+
+  /** 最小空座位号;座位已满返回 null(进备战席) */
+  private firstFreeSeat(): number | null {
+    const taken = new Set(
+      [...this.players.values()].map((p) => p.seat).filter((s): s is number => s !== null),
+    );
+    for (let i = 0; i < this.config.maxPlayers; i++) if (!taken.has(i)) return i;
+    return null;
+  }
+
+  /** 在座玩家(有座位号),按座位升序 */
+  private seated(): PlayerInternal[] {
+    return [...this.players.values()]
+      .filter((p) => p.seat !== null)
+      .sort((a, b) => (a.seat as number) - (b.seat as number));
+  }
+
+  /** 换座/入座/下场备战席(仅 lobby) */
+  moveSeat(id: string, seat: number | null): void {
+    const p = this.players.get(id) ?? (fail('不在房间中') as never);
+    if (this.phase !== 'lobby') fail('游戏开始后不能换座');
+    if (seat !== null) {
+      if (!Number.isInteger(seat) || seat < 0 || seat >= this.config.maxPlayers) fail('无效座位');
+      if ([...this.players.values()].some((o) => o.id !== id && o.seat === seat)) fail('该座位已被占');
+    }
+    p.seat = seat;
+    if (seat === null) p.ready = false; // 去备战席则清掉准备状态
+    this.broadcastState();
   }
 
   /** 断线重连:恢复 socket 绑定后回放全部状态 */
@@ -320,7 +370,8 @@ export class Room {
     this.sendSystem(systemMsg);
     this.broadcastVoicePeers();
     const inGame = this.phase !== 'lobby' && this.phase !== 'gameEnd';
-    if (inGame && this.players.size < MIN_PLAYERS) {
+    // 对局中以"在座参战人数"判断是否人数不足(备战席观战者不撑局)
+    if (inGame && this.seated().length < MIN_PLAYERS) {
       this.sendSystem('人数不足,游戏结束');
       this.resetToLobby();
       return;
@@ -372,8 +423,10 @@ export class Room {
     if (this.phase !== 'lobby') fail('游戏已开始');
     if (id !== this.hostId) fail('只有房主可以开始游戏');
     const minPlayers = this.config.mode === 'relay' ? RELAY_MIN_PLAYERS : MIN_PLAYERS;
-    if (this.players.size < minPlayers) fail(`至少需要 ${minPlayers} 名玩家`);
-    for (const p of this.players.values()) {
+    const seated = this.seated();
+    if (seated.length < minPlayers) fail(`至少需要 ${minPlayers} 名在座玩家`);
+    // 仅要求在座的非房主玩家已准备;备战席玩家不参与本局,无需准备
+    for (const p of seated) {
       if (p.id !== this.hostId && !p.ready) fail('还有玩家未准备');
     }
     for (const p of this.players.values()) {
@@ -404,7 +457,8 @@ export class Room {
   // ---------- 回合推进 ----------
 
   private buildQueue(): void {
-    this.drawQueue = [...this.players.keys()];
+    // 出场顺序按座位;备战席玩家不参战
+    this.drawQueue = this.seated().map((p) => p.id);
     this.turnsPerRound = this.drawQueue.length;
   }
 
@@ -568,7 +622,8 @@ export class Room {
   }
 
   private computeRanking(): RankingEntry[] {
-    const sorted = [...this.players.values()].sort((a, b) => b.score - a.score);
+    // 仅在座玩家参与排名(备战席观战者不计)
+    const sorted = this.seated().sort((a, b) => b.score - a.score);
     let lastScore = Number.NaN;
     let lastRank = 0;
     return sorted.map((p, i) => {
@@ -582,7 +637,8 @@ export class Room {
   // ---------- 接龙(relay)推进 ----------
 
   private startRelay(): void {
-    this.relayOrder = [...this.players.keys()];
+    // 接龙顺序按座位;备战席玩家不参战
+    this.relayOrder = this.seated().map((p) => p.id);
     this.relaySeed = pickWords(1, new Set(), this.rng)[0]?.text ?? '苹果';
     this.relayLinks = [];
     this.relayRecap = null;
@@ -887,6 +943,13 @@ export class Room {
       return;
     }
 
+    if (p.seat === null) {
+      // 备战席观战者:可聊天但不能剧透答案,也不参与计分
+      if (judge !== 'wrong') fail('观战中不能剧透答案哦');
+      this.broadcastChat({ kind: 'chat', playerId: id, name: `${p.name}(观战)`, text });
+      return;
+    }
+
     if (p.guessedAt != null) {
       // 已猜中者发言仅画者与其他已猜中者可见
       const targets = [...this.players.values()]
@@ -920,8 +983,12 @@ export class Room {
       drawer.score += DRAWER_POINT_PER_GUESS;
       drawer.turnGain += DRAWER_POINT_PER_GUESS;
     }
+    // 猜中者本人:私发原词与得分;其余人只看到打码,看不到答案
     this.io.send(p.id, 'game:word', { word: this.word!.text });
     this.sendChatTo([p.id], { kind: 'correct', text: `你猜对了!+${gain}` });
+    const masked = '＊'.repeat([...this.word!.text].length);
+    const others = [...this.players.values()].filter((t) => t.id !== p.id).map((t) => t.id);
+    this.sendChatTo(others, { kind: 'chat', playerId: p.id, name: p.name, text: masked });
     this.broadcastChat({ kind: 'system', text: `${p.name} 猜对了!` });
     this.broadcastState();
     this.checkAllGuessed();
@@ -929,8 +996,9 @@ export class Room {
 
   private checkAllGuessed(): void {
     if (this.phase !== 'drawing') return;
+    // 仅在座猜词者纳入"全员猜中"判定(备战席观战者不算)
     const onlineGuessers = [...this.players.values()].filter(
-      (p) => p.id !== this.drawerId && p.online,
+      (p) => p.id !== this.drawerId && p.online && p.seat !== null,
     );
     if (onlineGuessers.length === 0) return;
     if (onlineGuessers.every((p) => p.guessedAt != null)) this.endTurn('allGuessed');

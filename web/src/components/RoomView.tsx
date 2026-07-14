@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { MIN_PLAYERS, RELAY_MIN_PLAYERS } from '@draw-guess/shared';
 import { useMe, useStore } from '../store';
-import { leaveRoom, setReady, startGame } from '../socket';
+import { leaveRoom, moveSeat, setReady, startGame } from '../socket';
 import { avatarFor, copyText } from '../utils';
 import { ChatPanel } from './ChatPanel';
 import { VoiceBar } from './VoiceBar';
@@ -18,11 +18,18 @@ export function RoomView(): JSX.Element | null {
   if (!roomState) return null;
 
   const me = roomState.players.find((p) => p.id === myId);
-  const others = roomState.players.filter((p) => p.id !== roomState.hostId);
-  const allReady = others.length > 0 && others.every((p) => p.ready);
+  const mySeated = me ? me.seat !== null : false;
+  const seatedPlayers = roomState.players.filter((p) => p.seat !== null);
+  const benched = roomState.players.filter((p) => p.seat === null);
+  const seatedOthers = seatedPlayers.filter((p) => p.id !== roomState.hostId);
+  const allReady = seatedOthers.length > 0 && seatedOthers.every((p) => p.ready);
   const isRelay = roomState.config.mode === 'relay';
   const minPlayers = isRelay ? RELAY_MIN_PLAYERS : MIN_PLAYERS;
-  const canStart = isHost && roomState.players.length >= minPlayers && allReady;
+  const canStart = isHost && seatedPlayers.length >= minPlayers && allReady;
+  const seatArr = Array.from(
+    { length: roomState.config.maxPlayers },
+    (_, i) => roomState.players.find((p) => p.seat === i) ?? null,
+  );
 
   const copyCode = (): void => {
     void copyText(roomState.id).then((ok) =>
@@ -62,30 +69,59 @@ export function RoomView(): JSX.Element | null {
       <div className="room-body">
         <section className="card room-players">
           <h2>
-            玩家 {roomState.players.length}/{roomState.config.maxPlayers}
+            座位 {seatedPlayers.length}/{roomState.config.maxPlayers}
+            <span className="seat-hint">（出场顺序按座位;点空位入座/换位）</span>
           </h2>
           <div className="lobby-grid">
-            {roomState.players.map((p) => (
-              <div key={p.id} className={`lobby-player ${!p.online ? 'offline' : ''}`}>
-                <div className="lobby-avatar">{avatarFor(p.id)}</div>
-                <div className="lobby-name">
-                  {p.isHost && '👑 '}
-                  {p.name}
-                  {p.id === myId && ' (我)'}
+            {seatArr.map((p, i) =>
+              p ? (
+                <div key={p.id} className={`lobby-player ${!p.online ? 'offline' : ''}`}>
+                  <div className="seat-no">{i + 1}</div>
+                  <div className="lobby-avatar">{avatarFor(p.id)}</div>
+                  <div className="lobby-name">
+                    {p.isHost && '👑 '}
+                    {p.name}
+                    {p.id === myId && ' (我)'}
+                  </div>
+                  <div className={`lobby-ready ${p.isHost ? '' : p.ready ? 'ok' : 'no'}`}>
+                    {p.isHost ? '房主' : p.ready ? '已准备' : '未准备'}
+                  </div>
                 </div>
-                <div className={`lobby-ready ${p.isHost ? '' : p.ready ? 'ok' : 'no'}`}>
-                  {p.isHost ? '房主' : p.ready ? '已准备' : '未准备'}
-                </div>
-              </div>
-            ))}
-            {Array.from({ length: roomState.config.maxPlayers - roomState.players.length }).map(
-              (_, i) => (
-                <div key={`empty-${i}`} className="lobby-player lobby-empty">
+              ) : (
+                <button
+                  key={`seat-${i}`}
+                  className="lobby-player lobby-empty seat-open"
+                  onClick={() => moveSeat(i)}
+                  title="点击入座"
+                >
+                  <div className="seat-no">{i + 1}</div>
                   <div className="lobby-avatar">➕</div>
-                  <div className="lobby-name">等待加入</div>
-                </div>
+                  <div className="lobby-name">点击入座</div>
+                </button>
               ),
             )}
+          </div>
+
+          <div className="bench-head">
+            <h2>🪑 备战席 {benched.length > 0 ? `(${benched.length})` : ''}</h2>
+            {mySeated && (
+              <button className="btn btn-ghost btn-sm" onClick={() => moveSeat(null)}>
+                下场观战
+              </button>
+            )}
+          </div>
+          <div className="bench-row">
+            {benched.length === 0 && <span className="empty">暂无观战玩家</span>}
+            {benched.map((p) => (
+              <div key={p.id} className={`bench-player ${!p.online ? 'offline' : ''}`}>
+                <span className="bench-avatar">{avatarFor(p.id)}</span>
+                <span className="bench-name">
+                  {p.isHost && '👑'}
+                  {p.name}
+                  {p.id === myId && ' (我)'}
+                </span>
+              </div>
+            ))}
           </div>
 
           <div className="lobby-actions">
@@ -105,12 +141,14 @@ export function RoomView(): JSX.Element | null {
                   </>
                 ) : canStart ? (
                   '开始游戏'
-                ) : roomState.players.length < minPlayers ? (
-                  `至少 ${minPlayers} 人才能开始`
+                ) : seatedPlayers.length < minPlayers ? (
+                  `至少 ${minPlayers} 名在座玩家才能开始`
                 ) : (
-                  '等待全员准备…'
+                  '等待在座玩家准备…'
                 )}
               </button>
+            ) : !mySeated ? (
+              <div className="bench-tip">👀 你在备战席,点上方空位入座即可参战</div>
             ) : me?.ready ? (
               <button className="btn btn-warn btn-big" onClick={() => setReady(false)}>
                 取消准备

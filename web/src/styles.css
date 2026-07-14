@@ -552,6 +552,84 @@ h2 {
   opacity: 0.45;
 }
 
+.lobby-player {
+  position: relative;
+}
+
+.seat-no {
+  position: absolute;
+  top: 4px;
+  left: 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.seat-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 6px;
+}
+
+.seat-open {
+  cursor: pointer;
+  border: 1px dashed var(--card-border);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.seat-open:hover {
+  border-color: var(--accent);
+  background: var(--panel);
+  color: var(--accent-2);
+}
+
+.bench-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bench-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.bench-player {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 4px 12px 4px 6px;
+  font-size: 13px;
+}
+
+.bench-player.offline {
+  opacity: 0.45;
+}
+
+.bench-avatar {
+  font-size: 18px;
+}
+
+.bench-tip {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 14px;
+  padding: 12px;
+  border: 1px dashed var(--card-border);
+  border-radius: 12px;
+  margin-top: 14px;
+}
+
 .lobby-empty {
   opacity: 0.35;
   border: 1px dashed var(--card-border);

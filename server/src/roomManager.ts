@@ -46,7 +46,7 @@ export class RoomManager {
     return false;
   }
 
-  createRoom(playerId: string, name: string, partial: Partial<RoomConfig>): string {
+  createRoom(playerId: string, name: string, partial: Partial<RoomConfig>, password = ''): string {
     if (this.playerRoom.has(playerId)) throw new GameError('你已在其他房间中');
     const config = sanitizeConfig(partial);
     let id = this.genRoomId();
@@ -63,6 +63,7 @@ export class RoomManager {
       },
       this.clock,
       this.rng,
+      config.private ? String(password ?? '').slice(0, 32) : '',
     );
     this.rooms.set(id, room);
     this.playerRoom.set(playerId, id);
@@ -76,7 +77,7 @@ export class RoomManager {
     return id;
   }
 
-  joinRoom(playerId: string, name: string, roomId: string): void {
+  joinRoom(playerId: string, name: string, roomId: string, password = ''): void {
     const existing = this.getRoomOf(playerId);
     if (existing) {
       if (existing.id === roomId) return existing.rejoin(playerId);
@@ -84,6 +85,9 @@ export class RoomManager {
     }
     const room = this.rooms.get(roomId.trim());
     if (!room) throw new GameError('房间不存在');
+    if (room.isPrivate && !room.passwordMatches(String(password ?? ''))) {
+      throw new GameError('房间密码错误');
+    }
     room.addPlayer(playerId, name);
     this.playerRoom.set(playerId, room.id);
   }
@@ -102,7 +106,9 @@ export class RoomManager {
   }
 
   listRooms(): RoomSummary[] {
-    return [...this.rooms.values()].map((r) => ({
+    return [...this.rooms.values()]
+      .filter((r) => !r.isPrivate)
+      .map((r) => ({
       id: r.id,
       hostName: r.hostName,
       playerCount: r.playerCount,
@@ -127,6 +133,7 @@ export function sanitizeConfig(partial: Partial<RoomConfig> | undefined): RoomCo
   const mode: GameMode = GAME_MODES.includes(p.mode as GameMode)
     ? (p.mode as GameMode)
     : DEFAULT_CONFIG.mode;
+  const isPrivate = p.private === true;
   const maxChoices = mode === 'relay' ? RELAY_MAX_PLAYERS_CHOICES : MAX_PLAYERS_CHOICES;
   const maxPlayers = maxChoices.includes(Number(p.maxPlayers))
     ? Number(p.maxPlayers)
@@ -144,5 +151,5 @@ export function sanitizeConfig(partial: Partial<RoomConfig> | undefined): RoomCo
   const wordOptionCount = WORD_OPTION_COUNT_CHOICES.includes(Number(p.wordOptionCount))
     ? Number(p.wordOptionCount)
     : DEFAULT_CONFIG.wordOptionCount;
-  return { mode, maxPlayers, rounds, drawSeconds, categoryHintSeconds, wordOptionCount };
+  return { mode, private: isPrivate, maxPlayers, rounds, drawSeconds, categoryHintSeconds, wordOptionCount };
 }

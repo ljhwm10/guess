@@ -14,10 +14,12 @@ export function formatSeconds(ms: number): string {
   return String(Math.max(0, Math.ceil(ms / 1000)));
 }
 
-/** 生成携带房间号的分享链接(基于当前地址,仅覆盖 room 参数) */
-export function buildRoomShareUrl(roomId: string): string {
+/** 生成携带房间号的分享链接;私密房间可附带密码(pw)以便直达 */
+export function buildRoomShareUrl(roomId: string, password?: string | null): string {
   const url = new URL(window.location.href);
   url.searchParams.set('room', roomId);
+  if (password) url.searchParams.set('pw', password);
+  else url.searchParams.delete('pw');
   url.hash = '';
   return url.toString();
 }

@@ -41,6 +41,7 @@ export function GameView(): JSX.Element | null {
   const phase = roomState.phase;
   const canDraw = isDrawer && phase === 'drawing';
   const drawer = roomState.players.find((p) => p.id === roomState.drawerId);
+  const spectating = roomState.players.find((p) => p.id === myId)?.seat === null;
 
   return (
     <div className="game">
@@ -54,6 +55,7 @@ export function GameView(): JSX.Element | null {
           ← 离开
         </button>
         <ShareButton compact />
+        {spectating && <span className="tag tag-mode">👀 观战</span>}
         <div className="game-round">
           第 {roomState.round}/{roomState.totalRounds} 轮 · {roomState.turnInRound}/
           {roomState.turnsPerRound}
@@ -150,7 +152,15 @@ export function GameView(): JSX.Element | null {
         </div>
 
         <section className="game-chat card">
-          <ChatPanel placeholder={isDrawer ? '和大家聊聊(不能剧透哦)' : '输入你的猜测…'} />
+          <ChatPanel
+            placeholder={
+              spectating
+                ? '观战中,可聊天(不能剧透答案)'
+                : isDrawer
+                  ? '和大家聊聊(不能剧透哦)'
+                  : '输入你的猜测…'
+            }
+          />
         </section>
       </div>
     </div>
