@@ -1,9 +1,16 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useStore } from './store';
-import { HomePage } from './components/HomePage';
-import { RoomView } from './components/RoomView';
-import { GameView } from './components/GameView';
-import { RelayView } from './components/RelayView';
+
+// 路由懒加载：将具名导出转换为默认导出（React.lazy 要求）
+const HomePage = lazy(() => import('./components/HomePage').then(m => ({ default: m.HomePage })));
+const RoomView = lazy(() => import('./components/RoomView').then(m => ({ default: m.RoomView })));
+const GameView = lazy(() => import('./components/GameView').then(m => ({ default: m.GameView })));
+const RelayView = lazy(() => import('./components/RelayView').then(m => ({ default: m.RelayView })));
+
+// 简单的加载占位
+function LoadingFallback() {
+  return <div className="loading">加载中…</div>;
+}
 
 export function App(): JSX.Element {
   const view = useStore((s) => s.view);
@@ -36,13 +43,15 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
-      {!inRoom && <HomePage />}
-      {inRoom && !inGame && <RoomView />}
-      {inGame && (isRelay ? <RelayView /> : <GameView />)}
-      {name && !connected && view === 'room' && (
-        <div className="conn-banner">连接已断开,正在重连…</div>
-      )}
-      {toast && <div className="toast">{toast}</div>}
+      <Suspense fallback={<LoadingFallback />}>
+        {!inRoom && <HomePage />}
+        {inRoom && !inGame && <RoomView />}
+        {inGame && (isRelay ? <RelayView /> : <GameView />)}
+        {name && !connected && view === 'room' && (
+          <div className="conn-banner">连接已断开,正在重连…</div>
+        )}
+        {toast && <div className="toast">{toast}</div>}
+      </Suspense>
     </div>
   );
 }

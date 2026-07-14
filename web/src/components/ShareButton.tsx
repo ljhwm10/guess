@@ -1,13 +1,7 @@
 import { useStore } from '../store';
 import { buildRoomShareUrl, copyText } from '../utils';
 
-interface ShareData {
-  title?: string;
-  text?: string;
-  url?: string;
-}
-
-/** 分享当前房间:优先系统分享面板,降级为复制链接(兼容非安全上下文) */
+/** 分享当前房间:直接复制链接到剪贴板 */
 export function ShareButton({ compact = false }: { compact?: boolean }): JSX.Element | null {
   const roomState = useStore((s) => s.roomState);
   const showToast = useStore((s) => s.showToast);
@@ -16,16 +10,7 @@ export function ShareButton({ compact = false }: { compact?: boolean }): JSX.Ele
 
   const doShare = async (): Promise<void> => {
     const url = buildRoomShareUrl(roomId);
-    const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
-    if (typeof nav.share === 'function') {
-      try {
-        await nav.share({ title: '你画我猜', text: `快来和我一起玩你画我猜!房间号 ${roomId}`, url });
-        return;
-      } catch (e) {
-        // 用户主动取消分享则不再复制
-        if ((e as { name?: string })?.name === 'AbortError') return;
-      }
-    }
+    // 直接复制链接到剪贴板，不触发系统分享面板（iOS 兼容）
     const ok = await copyText(url);
     showToast(ok ? '房间链接已复制,发给好友吧 🔗' : `分享链接:${url}`);
   };
