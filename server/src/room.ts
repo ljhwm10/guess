@@ -573,11 +573,14 @@ export class Room {
     this.relayRecap = null;
     this.relayStep = 0;
     this.relayActiveId = null;
-    this.sendSystem('接龙开始!第一位玩家拿到原始词开画,之后交替「看画猜词 / 看词作画」');
+    this.sendSystem('接龙开始!第一位照原始词作画,之后每人看上一幅画重画,最后一人看画猜词');
     this.beginRelayStep();
   }
 
-  /** 每一步:偶数步作画、奇数步猜词;当前玩家不在线则记空环并跳过 */
+  /**
+   * 每一步:除最后一步是"看画猜词"外,其余都是"作画"——
+   * 首位照原始词画,中间位照上一幅画重画;当前玩家不在线则记空环并跳过。
+   */
   private beginRelayStep(): void {
     this.clearTimers();
     if (this.relayStep >= this.relayOrder.length) {
@@ -586,7 +589,8 @@ export class Room {
     }
     const activeId = this.relayOrder[this.relayStep];
     const player = this.players.get(activeId);
-    const kind: 'draw' | 'guess' = this.relayStep % 2 === 0 ? 'draw' : 'guess';
+    const isLast = this.relayStep === this.relayOrder.length - 1;
+    const kind: 'draw' | 'guess' = isLast ? 'guess' : 'draw';
     if (!player || !player.online) {
       this.recordEmptyRelayLink(activeId, kind);
       this.relayStep += 1;
@@ -603,7 +607,13 @@ export class Room {
       this.phaseTimer = this.clock.setTimeout(() => this.finishRelayDraw(true), ms);
       this.broadcastState();
       this.io.send(activeId, 'draw:sync', { strokes: [] });
-      this.io.send(activeId, 'relay:task', { kind: 'draw', prompt: this.currentRelayPrompt() });
+      if (this.relayStep === 0) {
+        // 首位:照原始词作画
+        this.io.send(activeId, 'relay:task', { kind: 'draw', prompt: this.relaySeed });
+      } else {
+        // 中间位:看上一幅画重画
+        this.io.send(activeId, 'relay:task', { kind: 'redraw', strokes: this.lastRelayDrawing() });
+      }
     } else {
       this.phase = 'relayGuess';
       const ms = RELAY_GUESS_SECONDS * 1000;
@@ -614,14 +624,7 @@ export class Room {
     }
   }
 
-  /** 当前作画步要画的词:第一步是原始词,其后是上一环的猜词 */
-  private currentRelayPrompt(): string {
-    if (this.relayStep === 0) return this.relaySeed;
-    const last = this.relayLinks[this.relayLinks.length - 1];
-    return last && last.kind === 'guess' ? last.word : this.relaySeed;
-  }
-
-  /** 最近一环的画(供猜词者观看) */
+  /** 最近一环的画(供重画者/猜词者观看) */
   private lastRelayDrawing(): Stroke[] {
     for (let i = this.relayLinks.length - 1; i >= 0; i--) {
       const l = this.relayLinks[i];
@@ -720,7 +723,11 @@ export class Room {
     }
     if (this.phase === 'relayDraw') {
       this.io.send(id, 'draw:sync', { strokes: this.strokes });
-      this.io.send(id, 'relay:task', { kind: 'draw', prompt: this.currentRelayPrompt() });
+      if (this.relayStep === 0) {
+        this.io.send(id, 'relay:task', { kind: 'draw', prompt: this.relaySeed });
+      } else {
+        this.io.send(id, 'relay:task', { kind: 'redraw', strokes: this.lastRelayDrawing() });
+      }
     } else if (this.phase === 'relayGuess') {
       this.io.send(id, 'relay:task', { kind: 'guess', strokes: this.lastRelayDrawing() });
     }

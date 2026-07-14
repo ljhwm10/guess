@@ -142,7 +142,7 @@ export function HomePage(): JSX.Element {
           </ConfigRow>
           {mode === 'relay' && (
             <p className="mode-hint">
-              接龙:{RELAY_MIN_PLAYERS}~16 人,轮流「看词作画 → 看画猜词」传一条链,结束回放整链看跑偏了多少 😆
+              接龙:{RELAY_MIN_PLAYERS}~16 人。首位照原始词作画,之后每人看上一幅画凭记忆重画,最后一人看画猜词;结束复盘整条画链 😆
             </p>
           )}
           <ConfigRow label="人数上限">

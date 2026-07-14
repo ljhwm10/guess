@@ -200,8 +200,18 @@ export interface ServerToClientEvents {
   'chat:msg': (m: ChatMsg) => void;
   /** 结算画廊:整局每回合的存档,仅 gameEnd 时下发一次(重连补发) */
   'game:gallery': (p: { turns: TurnRecord[] }) => void;
-  /** 接龙:发给当前活动玩家的私密任务(作画者收到要画的词;猜词者收到上一环的画) */
-  'relay:task': (p: { kind: 'draw'; prompt: string } | { kind: 'guess'; strokes: Stroke[] }) => void;
+  /**
+   * 接龙:发给当前活动玩家的私密任务。
+   *  - draw:   首位,照原始词 prompt 作画
+   *  - redraw: 中间位,看上一位的画 strokes,凭记忆重画一幅
+   *  - guess:  末位,看上一位的画 strokes,猜出词
+   */
+  'relay:task': (
+    p:
+      | { kind: 'draw'; prompt: string }
+      | { kind: 'redraw'; strokes: Stroke[] }
+      | { kind: 'guess'; strokes: Stroke[] },
+  ) => void;
   /** 接龙:整链回放,仅 gameEnd 时下发一次(重连补发) */
   'relay:recap': (p: { recap: RelayRecap }) => void;
   'voice:peers': (p: { peers: VoicePeer[] }) => void;

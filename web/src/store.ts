@@ -13,7 +13,10 @@ import type {
 export type View = 'home' | 'room';
 export type Theme = 'light' | 'dark';
 /** 接龙:发给当前活动玩家的私密任务 */
-export type RelayTask = { kind: 'draw'; prompt: string } | { kind: 'guess'; strokes: Stroke[] };
+export type RelayTask =
+  | { kind: 'draw'; prompt: string }
+  | { kind: 'redraw'; strokes: Stroke[] }
+  | { kind: 'guess'; strokes: Stroke[] };
 
 interface GameStore {
   playerId: string;

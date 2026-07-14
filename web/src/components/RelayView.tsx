@@ -86,6 +86,19 @@ export function RelayView(): JSX.Element | null {
                 onPenWidth={setPenWidth}
                 onEraserWidth={setEraserWidth}
               />
+            ) : relayTask.kind === 'redraw' ? (
+              <RelayRedrawActive
+                key={relay?.step}
+                reference={relayTask.strokes}
+                tool={tool}
+                color={color}
+                penWidth={penWidth}
+                eraserWidth={eraserWidth}
+                onTool={setTool}
+                onColor={setColor}
+                onPenWidth={setPenWidth}
+                onEraserWidth={setEraserWidth}
+              />
             ) : (
               <RelayGuessActive strokes={relayTask.strokes} />
             )
@@ -116,6 +129,84 @@ function RelayDrawActive(props: {
       <div className="relay-prompt">
         ✏️ 请画出:<strong>{prompt}</strong>
         <span className="relay-prompt-tip">(只能用图形,别写字哦)</span>
+      </div>
+      <div className="canvas-outer">
+        <CanvasBoard
+          canDraw
+          tool={tool}
+          color={color}
+          width={tool === 'eraser' ? eraserWidth : penWidth}
+        />
+      </div>
+      <Toolbar
+        tool={tool}
+        color={color}
+        penWidth={penWidth}
+        eraserWidth={eraserWidth}
+        onTool={props.onTool}
+        onColor={props.onColor}
+        onPenWidth={props.onPenWidth}
+        onEraserWidth={props.onEraserWidth}
+      />
+      <button className="btn btn-primary btn-big" onClick={relayDone}>
+        ✅ 画好了,传给下家
+      </button>
+    </>
+  );
+}
+
+/** 观察上一幅画的秒数,之后参考图隐藏、凭记忆重画(制造"跑偏"乐趣) */
+const OBSERVE_SECONDS = 8;
+
+/** 重画环节:先看上一位的画数秒,隐藏后凭记忆重新画一幅 */
+function RelayRedrawActive(props: {
+  reference: Parameters<typeof StrokesCanvas>[0]['strokes'];
+  tool: Tool;
+  color: string;
+  penWidth: number;
+  eraserWidth: number;
+  onTool(t: Tool): void;
+  onColor(c: string): void;
+  onPenWidth(w: number): void;
+  onEraserWidth(w: number): void;
+}): JSX.Element {
+  const { reference, tool, color, penWidth, eraserWidth } = props;
+  const [observing, setObserving] = useState(true);
+  const [left, setLeft] = useState(OBSERVE_SECONDS);
+
+  useEffect(() => {
+    if (!observing) return;
+    if (left <= 0) {
+      setObserving(false);
+      return;
+    }
+    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [observing, left]);
+
+  if (observing) {
+    return (
+      <>
+        <div className="relay-prompt">
+          👀 记住上一位画的,<strong>{left}</strong> 秒后隐藏
+          <span className="relay-prompt-tip">(隐藏后凭记忆重画)</span>
+        </div>
+        <div className="canvas-outer">
+          <div className="canvas-wrap">
+            <StrokesCanvas strokes={reference} className="board" />
+          </div>
+        </div>
+        <button className="btn btn-primary btn-big" onClick={() => setObserving(false)}>
+          记好了,开始画 →
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="relay-prompt">
+        ✏️ 凭记忆把它重新画一遍<span className="relay-prompt-tip">(参考图已隐藏,别写字)</span>
       </div>
       <div className="canvas-outer">
         <CanvasBoard

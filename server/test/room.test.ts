@@ -622,111 +622,113 @@ describe('结算画廊', () => {
 });
 
 describe('接龙模式', () => {
-  function relayRoom(n = 4): Room {
+  function relayRoom(n = 3): Room {
     const room = makeRoom({ ...CONFIG, mode: 'relay', maxPlayers: 8, drawSeconds: 60 });
-    const ids = ['A', 'B', 'C', 'D', 'E', 'F'].slice(0, n);
-    const names = ['安', '波', '陈', '丁', '鄂', '冯'].slice(0, n);
+    const ids = ['A', 'B', 'C', 'D', 'E'].slice(0, n);
+    const names = ['安', '波', '陈', '丁', '鄂'].slice(0, n);
     ids.forEach((id, i) => room.addPlayer(id, names[i]));
     ids.slice(1).forEach((id) => room.setReady(id, true));
     room.startGame('A');
     return room;
   }
-  const seedOf = (): string => (io.last('A', 'relay:task')!.args[0] as { prompt: string }).prompt;
+  const drawPrompt = (id: string): string =>
+    (io.last(id, 'relay:task')!.args[0] as { prompt: string }).prompt;
+  const addOneStroke = (room: Room, id: string, sid: string): void =>
+    room.addStroke(id, { id: sid, tool: 'pen', color: '#000', width: 4, points: [0.2, 0.2, 0.4, 0.4] });
 
-  it('不足 4 人无法开始接龙', () => {
+  it('不足 2 人无法开始接龙', () => {
     const room = makeRoom({ ...CONFIG, mode: 'relay' });
     room.addPlayer('A', '安');
-    room.addPlayer('B', '波');
-    room.addPlayer('C', '陈');
-    room.setReady('B', true);
-    room.setReady('C', true);
-    expect(() => room.startGame('A')).toThrow('至少需要 4');
+    expect(() => room.startGame('A')).toThrow('至少需要 2');
   });
 
-  it('开局第一位作画并收到原始词;其余人只见进度、收不到画', () => {
-    const room = relayRoom(4);
+  it('开局首位照原始词作画;其余人只见进度、收不到画', () => {
+    const room = relayRoom(3);
     expect(room.phase).toBe('relayDraw');
     const task = io.last('A', 'relay:task')!.args[0] as { kind: string; prompt?: string };
     expect(task.kind).toBe('draw');
     expect((task.prompt ?? '').length).toBeGreaterThan(0);
-    const st = io.lastState('B')!;
-    expect(st.relay).toEqual({
+    expect(io.lastState('B')!.relay).toEqual({
       step: 1,
-      totalSteps: 4,
+      totalSteps: 3,
       kind: 'draw',
       activeId: 'A',
       activeName: '安',
     });
     io.clear();
-    room.addStroke('A', {
-      id: 's1',
-      tool: 'pen',
-      color: '#000',
-      width: 4,
-      points: [0.1, 0.1, 0.3, 0.3],
-    });
+    addOneStroke(room, 'A', 's1');
     expect(io.of('B', 'draw:stroke')).toHaveLength(0); // 私密,不广播
   });
 
-  it('作画→猜词→作画 依次推进,猜词者看到上一环的画,下一作画者拿到该猜词', () => {
-    const room = relayRoom(4);
-    room.addStroke('A', {
-      id: 's1',
-      tool: 'pen',
-      color: '#000',
-      width: 4,
-      points: [0.2, 0.2, 0.4, 0.4],
-    });
+  it('中间位看上一幅画重画,只有最后一位才猜词', () => {
+    const room = relayRoom(3);
+    addOneStroke(room, 'A', 'a1');
     room.relayDone('A');
-    expect(room.phase).toBe('relayGuess');
+    // 第二位 B:重画(看到 A 的画),仍处于作画阶段
+    expect(room.phase).toBe('relayDraw');
     expect(io.lastState('C')!.relay!.activeId).toBe('B');
     const bTask = io.last('B', 'relay:task')!.args[0] as { kind: string; strokes?: unknown[] };
-    expect(bTask.kind).toBe('guess');
-    expect(bTask.strokes).toHaveLength(1);
-    room.relayGuess('B', '香蕉');
-    expect(room.phase).toBe('relayDraw');
-    const cTask = io.last('C', 'relay:task')!.args[0] as { kind: string; prompt: string };
-    expect(cTask).toEqual({ kind: 'draw', prompt: '香蕉' });
+    expect(bTask.kind).toBe('redraw');
+    expect(bTask.strokes).toHaveLength(1); // 看到 A 画的一笔
+    addOneStroke(room, 'B', 'b1');
+    room.relayDone('B');
+    // 第三位 C(末位):猜词,看到 B 的画
+    expect(room.phase).toBe('relayGuess');
+    const cTask = io.last('C', 'relay:task')!.args[0] as { kind: string; strokes?: unknown[] };
+    expect(cTask.kind).toBe('guess');
+    expect(cTask.strokes).toHaveLength(1);
   });
 
-  it('只有当前活动玩家能操作', () => {
-    const room = relayRoom(4);
-    expect(() => room.relayGuess('A', 'x')).toThrow('不在猜词环节');
+  it('中间位不能猜词、非活动玩家不能操作', () => {
+    const room = relayRoom(3);
+    expect(() => room.relayGuess('A', 'x')).toThrow('不在猜词环节'); // A 在作画阶段
     expect(() => room.relayDone('B')).toThrow('还没轮到你');
   });
 
-  it('走完全链结算下发 recap;首尾一致则全员得分', () => {
-    const room = relayRoom(4);
-    const seed = seedOf();
-    room.relayDone('A');
-    room.relayGuess('B', seed);
-    room.relayDone('C');
-    room.relayGuess('D', seed);
+  it('两人也能玩:首位画、末位猜;首尾一致全员得分', () => {
+    const room = relayRoom(2);
+    const seed = drawPrompt('A');
+    room.relayDone('A'); // → B 末位猜词
+    expect(room.phase).toBe('relayGuess');
+    expect((io.last('B', 'relay:task')!.args[0] as { kind: string }).kind).toBe('guess');
+    room.relayGuess('B', seed); // 猜中原始词
     expect(room.phase).toBe('gameEnd');
     const recap = io.last('A', 'relay:recap')!.args[0] as {
-      recap: { seed: string; links: unknown[]; success: boolean; finalGuess: string };
+      recap: { seed: string; links: { kind: string }[]; success: boolean; finalGuess: string };
     };
     expect(recap.recap.seed).toBe(seed);
-    expect(recap.recap.links).toHaveLength(4);
+    expect(recap.recap.links.map((l) => l.kind)).toEqual(['draw', 'guess']);
     expect(recap.recap.finalGuess).toBe(seed);
     expect(recap.recap.success).toBe(true);
     expect(io.lastState('A')!.ranking!.every((r) => r.score === 100)).toBe(true);
   });
 
-  it('猜词/作画超时自动成环推进', () => {
-    const room = relayRoom(4);
-    clock.advance(60_000); // A 作画超时 → B 猜词
-    expect(room.phase).toBe('relayGuess');
-    clock.advance(45_000); // B 猜词超时 → C 作画
+  it('走完全链:回放含 原始词 +(N-1)张画 + 1个猜词', () => {
+    const room = relayRoom(3);
+    room.relayDone('A'); // A 画
+    room.relayDone('B'); // B 重画
+    room.relayGuess('C', '随便'); // C 猜
+    expect(room.phase).toBe('gameEnd');
+    const recap = io.last('A', 'relay:recap')!.args[0] as { recap: { links: { kind: string }[] } };
+    expect(recap.recap.links.map((l) => l.kind)).toEqual(['draw', 'draw', 'guess']);
+  });
+
+  it('作画/猜词超时自动推进', () => {
+    const room = relayRoom(3);
+    clock.advance(60_000); // A 作画超时 → B 重画
     expect(room.phase).toBe('relayDraw');
+    expect(io.lastState('A')!.relay!.activeId).toBe('B');
+    clock.advance(60_000); // B 作画超时 → C 猜词
+    expect(room.phase).toBe('relayGuess');
+    clock.advance(45_000); // C 猜词超时 → 结束
+    expect(room.phase).toBe('gameEnd');
   });
 
   it('接龙结束再来一局清空接龙状态', () => {
-    const room = relayRoom(4);
+    const room = relayRoom(3);
     room.relayDone('A');
-    room.relayGuess('B', 'x');
-    room.relayDone('C');
-    room.relayGuess('D', 'y');
+    room.relayDone('B');
+    room.relayGuess('C', 'x');
     expect(room.phase).toBe('gameEnd');
     room.playAgain('A');
     expect(room.phase).toBe('lobby');
@@ -734,14 +736,8 @@ describe('接龙模式', () => {
   });
 
   it('等待者重连不会拿到当前作画者的画', () => {
-    const room = relayRoom(4);
-    room.addStroke('A', {
-      id: 's1',
-      tool: 'pen',
-      color: '#000',
-      width: 4,
-      points: [0.1, 0.1, 0.2, 0.2],
-    });
+    const room = relayRoom(3);
+    addOneStroke(room, 'A', 's1');
     room.onDisconnect('C');
     io.clear();
     room.rejoin('C');
@@ -751,9 +747,9 @@ describe('接龙模式', () => {
   });
 
   it('当前作画者掉线立即成环推进', () => {
-    const room = relayRoom(4);
+    const room = relayRoom(3);
     room.onDisconnect('A'); // A 正在作画
-    expect(room.phase).toBe('relayGuess'); // 直接进入 B 猜词
+    expect(room.phase).toBe('relayDraw'); // 进入 B 重画(B 非末位)
     expect(io.lastState('B')!.relay!.activeId).toBe('B');
   });
 });

@@ -31,11 +31,11 @@ export const ERASER_WIDTHS = [16, 28, 44];
 export const CANVAS_BG = '#ffffff';
 
 export const MAX_PLAYERS_CHOICES = [2, 3, 4, 5, 6, 7, 8];
-/** 接龙模式人数上限选项(单链依次,人越多链越长越好玩) */
-export const RELAY_MAX_PLAYERS_CHOICES = [4, 6, 8, 10, 12, 16];
+/** 接龙模式人数上限选项(单链依次:画→画→…→最后一人猜) */
+export const RELAY_MAX_PLAYERS_CHOICES = [2, 4, 6, 8, 12, 16];
 export const GAME_MODES = ['classic', 'relay'] as const;
-/** 接龙模式开局最少人数 */
-export const RELAY_MIN_PLAYERS = 4;
+/** 接龙模式开局最少人数(1 人画、1 人猜即可) */
+export const RELAY_MIN_PLAYERS = 2;
 /** 接龙"猜词"环节时长(秒);"作画"环节沿用 config.drawSeconds */
 export const RELAY_GUESS_SECONDS = 45;
 export const ROUNDS_CHOICES = [1, 2, 3];
