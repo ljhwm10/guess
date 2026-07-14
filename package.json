@@ -1,0 +1,23 @@
+{
+  "name": "draw-guess",
+  "version": "0.1.0",
+  "private": true,
+  "description": "你画我猜 · Draw & Guess —— 免登录多人实时你画我猜(web + server + shared)",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:server": "pnpm --filter @draw-guess/server dev",
+    "dev:web": "pnpm --filter @draw-guess/web dev",
+    "build": "pnpm --filter @draw-guess/web build",
+    "start": "pnpm --filter @draw-guess/server start",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm --filter @draw-guess/server test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+# 你画我猜 · Draw & Guess —— 独立 pnpm workspace(web + server + shared)
+packages:
+  - 'web'
+  - 'server'
+  - 'shared'
