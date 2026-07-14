@@ -50,7 +50,11 @@ export function createGameServer(): GameServer {
   const manager = new RoomManager(roomIO, systemClock);
 
   app.get('/healthz', (_req, res) => {
-    res.json({ ok: true, rooms: manager.listRooms().length });
+    res.json({
+      ok: true,
+      rooms: manager.listRooms().length,
+      sockets: io.engine.clientsCount,
+    });
   });
 
   // 生产模式:托管 web 构建产物(单端口即玩)
@@ -64,6 +68,14 @@ export function createGameServer(): GameServer {
 
   io.on('connection', (socket) => {
     const data = socket.data as SocketData;
+
+    // 连接/断开诊断日志:transport 看是否走上 websocket;disconnect reason 定位断线原因
+    console.log(
+      `[draw-guess] connect ${socket.id} transport=${socket.conn.transport.name} total=${io.engine.clientsCount}`,
+    );
+    socket.conn.on('upgrade', (t) =>
+      console.log(`[draw-guess] upgrade ${socket.id} -> ${t.name}`),
+    );
 
     const playerId = (): string => {
       if (!data.playerId) throw new GameError('请先进入游戏');
@@ -241,7 +253,10 @@ export function createGameServer(): GameServer {
       roomIO.send(String(p.to), 'voice:signal', { from: id, data: p.data });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      console.log(
+        `[draw-guess] disconnect ${socket.id} reason=${reason} total=${io.engine.clientsCount}`,
+      );
       const id = data.playerId;
       if (!id) return;
       // 仅当此 socket 仍是该玩家的当前连接时才算掉线(避免顶号误判)
