@@ -84,7 +84,7 @@ export class RoomManager {
       throw new GameError('你已在其他房间中');
     }
     const room = this.rooms.get(roomId.trim());
-    if (!room) throw new GameError('房间不存在');
+    if (!room) throw new GameError('房间不存在或已解散,请核对房间号');
     if (room.isPrivate && !room.passwordMatches(String(password ?? ''))) {
       throw new GameError('房间密码错误');
     }

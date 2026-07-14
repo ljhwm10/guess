@@ -492,6 +492,7 @@ h2 {
   margin: 0 auto;
   width: 100%;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .room-head {
@@ -529,7 +530,16 @@ h2 {
 }
 
 .room-players {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 座位+备战席可滚动,操作区(准备/开始)与语音固定在底部,始终可见 */
+.room-players-scroll {
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .lobby-grid {
@@ -598,8 +608,14 @@ h2 {
 .bench-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   min-height: 20px;
+  padding-bottom: 4px;
+}
+
+.bench-row .empty {
+  padding: 6px 0;
 }
 
 .bench-player {
@@ -660,7 +676,13 @@ h2 {
 }
 
 .lobby-actions {
-  margin-top: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--card-border);
+}
+
+.room-players .voice-bar {
+  margin-bottom: 2px;
 }
 
 .room-chat {
@@ -1503,8 +1525,18 @@ h2 {
   }
 
   .room-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(180px, 1fr);
+    display: block;
+  }
+
+  /* 移动端整页滚动,座位区不再内部滚动,操作/语音自然在流中(可滚到) */
+  .room-players-scroll {
+    overflow-y: visible;
+    min-height: 0;
+  }
+
+  .room-chat {
+    height: 46vh;
+    margin-top: 10px;
   }
 
   .game {

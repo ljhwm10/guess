@@ -81,10 +81,11 @@ export function HomePage(): JSX.Element {
   }, [connected, savedName, invitedRoom]);
 
   const ensureName = (): boolean => {
-    const name = nameInput.trim().slice(0, NAME_MAX_LEN);
+    // 未输入昵称则自动给一个「用户1234」的默认名
+    let name = nameInput.trim().slice(0, NAME_MAX_LEN);
     if (!name) {
-      showToast('请先输入昵称');
-      return false;
+      name = `用户${1000 + Math.floor(Math.random() * 9000)}`;
+      setNameInput(name);
     }
     enterGame(name);
     return true;

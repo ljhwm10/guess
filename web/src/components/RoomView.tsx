@@ -68,6 +68,7 @@ export function RoomView(): JSX.Element | null {
 
       <div className="room-body">
         <section className="card room-players">
+          <div className="room-players-scroll">
           <h2>
             座位 {seatedPlayers.length}/{roomState.config.maxPlayers}
             <span className="seat-hint">（出场顺序按座位;点空位入座/换位）</span>
@@ -122,6 +123,7 @@ export function RoomView(): JSX.Element | null {
                 </span>
               </div>
             ))}
+          </div>
           </div>
 
           <div className="lobby-actions">
