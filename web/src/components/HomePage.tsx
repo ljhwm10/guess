@@ -255,7 +255,7 @@ export function HomePage(): JSX.Element {
           </div>
         </section>
       </div>
-      <footer className="home-foot">同一局域网内,手机访问电脑的 LAN 地址即可一起玩</footer>
+      <footer className="home-foot">分享链接给好友，用手机打开即可一起玩</footer>
     </div>
   );
 }
